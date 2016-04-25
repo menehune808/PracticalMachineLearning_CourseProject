@@ -1,0 +1,139 @@
+---
+title: "PracticalMachineLearningCourseProject"
+author: "Gilbert Maerina"
+date: "April 21, 2016"
+output: html_document
+---
+
+##Background
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+##Data
+
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+## Exploratory Data Analysis
+```{r,  warning=FALSE}
+
+# setup library dependencies
+library(caret)
+library(ggplot2)
+library(lattice)
+library(kernlab)
+library(randomForest)
+```
+
+```{r,echo=FALSE}
+
+download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", destfile = "pml-training.csv", method="curl")
+download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", destfile = "pml-testing.csv", method="curl")
+```
+
+
+Load the data and tidy up datasets by removing any rows with empty cells
+```{r}
+na_str <- c("","NA","#DIV/0!")
+train_set <- read.csv("pml-training.csv",na.strings=na_str)
+
+test_set <- read.csv("pml-testing.csv",na.strings=na_str)
+```
+
+
+Lets see what our data looks like
+```{r}
+# view the dimensions of the training set
+dim(train_set)
+
+# view the distribution of the classe
+table(train_set$classe)
+```
+
+
+
+##Partition Data
+Partition data for use in training and validation. We don't have to worry about creating separate partition for test since it is provided.
+```{r}
+set.seed(147258)
+# Partition data 60/40 split for training and validation
+train_60pct <- createDataPartition(train_set$classe,p=0.6, list=FALSE)
+training_partition <- train_set[train_60pct,]
+validation_partition <- train_set[-train_60pct,]
+
+plot(training_partition$classe, col="blue", main="Bar Plot of levels of the variable classe within the 60% Partition Training data", xlab="classe levels", ylab="Frequency")
+```
+
+
+##Selection of features
+```{r, echo=FALSE}
+# exclude near zero variance features
+near_zero_variance <- nearZeroVar(training_partition)
+
+training_partition <- training_partition[, -near_zero_variance]
+
+# exclude columns with 50% or more missing values exclude descriptive
+# columns like name etc
+cntrl_length <- sapply(training_partition, function(x) {
+    sum(!(is.na(x) | x == ""))
+})
+
+null_col <- names(cntrl_length[cntrl_length < 0.51 * length(training_partition$classe)])
+
+descript_col <- c("X", "user_name", 
+                 "raw_timestamp_part_1", "raw_timestamp_part_2", 
+                 "cvtd_timestamp", "new_window", 
+                 "num_window")
+
+exclude_cols <- c(descript_col, null_col)
+
+training_partition <- training_partition[, !names(training_partition) %in% exclude_cols]
+```
+
+
+
+### TRAINING MODEL 
+For this project, we will use random forest as our model for prediction
+
+```{r}
+random_forest_model <- randomForest(classe ~ ., data = training_partition, importance = TRUE, ntrees = 10)
+```
+
+
+
+####Model Performance on Training Set (60% of Original Training Set)
+Let us now test our model performance on our 60/40 partitioned training set. 
+```{r}
+predict_training <- predict(random_forest_model, training_partition)
+print(confusionMatrix(predict_training, training_partition$classe))
+```
+
+
+###Model Performance on Validation Set (40% of Original Training Set)
+```{r}
+predict_validation <- predict(random_forest_model, validation_partition)
+print(confusionMatrix(predict_validation, validation_partition$classe))
+```
+
+
+Lets compute the prediction of the algorithm for the test set
+```{r}
+predict_test <- predict(random_forest_model, test_set)
+predict_test
+```
+
+##In Conclusion
+The random forest model has provided us a cross validation accuracy of 99.4%, with a out-of-sample error of 0.6%. Because of the characteristics of Random Forest:
+-Usually one of the two top performing algorithms along with boosting in prediction contests
+-Difficult to interpret, but often very accurate
+
+For that reason we will use it for the final calculaltions.
+
+
